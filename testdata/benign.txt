@@ -1,0 +1,45 @@
+This corpus holds no personal data by construction. Every line is text a
+language model reads or writes every day, chosen to look like the values the
+recognisers look for: numbers, codes, versions, dates and identifiers.
+
+The release v1.2.3 fixed issue #4521; v2.10.11.4 is the Windows build.
+Upgrade from 1.27.2 to 1.27.3, then run go test ./... -count=1.
+SNMP OID 1.3.6.1.2.1.1.5.0 names the host; section 4.5.3.1.3 sets the limit.
+The meeting is on 2026-10-24 at 10:46:38 CEST, or 24/10/2026 at 10h46.
+Timestamps: 2026-10-24T08:44:11.2837431Z and 1729760678.
+The UUID is 3f2504e0-4f89-11d3-9a0c-0305e82c3301; the commit is 3bf7e72a9c1d.
+SHA-256: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae.
+ISBN 978-2-07-036822-8 and ISSN 0317-8471 are book and serial numbers.
+EAN-13 barcode 4006381333931 on the box; UPC 036000291452.
+Order 2026-000123 shipped; invoice FAC-2026-10-0042 is due in 30 days.
+The price is 1 234,56 € TTC, or 1,234.56 USD; 12 345 678 inhabitants.
+Coordinates 48.8566, 2.3522; altitude 35 m; 3.14159265358979 rad.
+The matrix is [[1, 2, 3], [4, 5, 6]] and the vector (0.1, 0.2, 0.3, 0.4).
+In C++ write std::vector<int> v; in Rust, use std::collections::HashMap;
+Perl's Foo::Bar->new and PHP's Class::method() are also double colons.
+MAC address 00:1A:2B:3C:4D:5E and a clock at 12:30:45:67.
+Version strings: 10.0.19045.3693, 6.1.7601.24545, 1.2.3.4.5.
+Postal code 75007 Paris; INSEE commune code 75056; department 2A.
+SIREN 552 100 554 and the APE code 6201Z identify a company.
+Phone extensions are written x4521 or ext. 210; the PIN is 0000.
+Serial number SN-0612-3456-78 printed under the case.
+The CAS number of water is 7732-18-5; ATC code N02BE01.
+Room 101, floor 3, building B; seat 14C on flight AF1234.
+A long integer: 18446744073709551615; another: 9007199254740991.
+Hex dump: de ad be ef 00 11 22 33 44 55 66 77 88 99 aa bb.
+Base64: SGVsbG8sIFdvcmxkIQ== and a JWT header eyJhbGciOiJIUzI1NiJ9.
+Path /usr/local/lib/python3.12/site-packages and C:\Program Files\App.
+Markdown link [docs](https://docs.example.org/v1/api#section-2) and a@ alone.
+An e-mail-looking thing that is not one: user@localhost, @mention, x@y.
+A git remote git@github.com:org/repo.git uses an SSH login, not a mailbox.
+Model names: llama-3.1-8b-instruct, Qwen2.5-1.5B, mistral-7b-v0.3.
+Kubernetes resources: 500m CPU, 2Gi memory, replicas: 3, port 8080:80.
+Ratios 16:9 and 4:3; scores 21-17, 3-2; the year 1984 and 2001.
+Card-like test vector that fails Luhn: 4111 1111 1111 1112.
+Twenty digits with no network: 1234 5678 9012 3456 7890.
+French social-security-shaped text with a wrong key: 1 84 05 76 451 089 99.
+IBAN-shaped text with a wrong check: FR00 2004 1010 0505 0001 3M02 606.
+Not an IPv4: 256.1.1.1, 1.2.3, 01.02.03.04, 1.2.3.4.5.
+Not an IPv6: ::, :::, 1:2:3, abc::defg, 12:34:56.
+A 10-digit reference that happens to look like a phone: ref 0123456789.
+SIRET 732 829 320 00074 is a company establishment number.
