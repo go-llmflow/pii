@@ -53,6 +53,7 @@ jobs:
       matrix:
         include:
           - { target: FuzzFind, pkg: . }
+          - { target: FuzzRunsMatchWholeText, pkg: . }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
