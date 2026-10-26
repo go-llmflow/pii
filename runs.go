@@ -3,6 +3,7 @@ package pii
 import (
 	"regexp"
 	"regexp/syntax"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -31,6 +32,9 @@ type class struct {
 	// max is the longest match of the class's pattern in bytes, -1 when
 	// unbounded (computed from the pattern by maxMatchLen).
 	max int
+	// triggers lists the trigger bytes, for strings.IndexByte (one byte,
+	// vectorised) or strings.IndexAny.
+	triggers string
 }
 
 func newClass(in, trigger func(c byte) bool, min int, re *regexp.Regexp) *class {
@@ -38,8 +42,26 @@ func newClass(in, trigger func(c byte) bool, min int, re *regexp.Regexp) *class 
 	for i := 0; i < 256; i++ {
 		c.in[i] = in(byte(i))
 		c.trigger[i] = in(byte(i)) && trigger(byte(i))
+		if c.trigger[i] {
+			c.triggers += string(rune(i)) // ASCII only: every class is
+		}
 	}
 	return c
+}
+
+// nextTrigger returns the index of the first trigger byte in s at or after
+// i, or -1.
+func (c *class) nextTrigger(s string, i int) int {
+	var j int
+	if len(c.triggers) == 1 {
+		j = strings.IndexByte(s[i:], c.triggers[0])
+	} else {
+		j = strings.IndexAny(s[i:], c.triggers)
+	}
+	if j < 0 {
+		return -1
+	}
+	return i + j
 }
 
 // maxMatchLen is the longest text re can match, in bytes, or -1 when it is
@@ -145,20 +167,28 @@ type acceptFunc func(a, b int) (end int, ok bool)
 // with the whole-text version to compare the two.
 var scan = scanRuns
 
+// scanRuns goes from trigger to trigger: the bytes between two runs that
+// hold one are never looked at one by one (IndexByte is vectorised), which
+// on prose is almost all of the text. The run around a trigger is expanded
+// both ways; it cannot start before i, because i is the end of the previous
+// run (a byte outside the class) or 0.
 func scanRuns(re *regexp.Regexp, c *class, s string, restart bool, accept acceptFunc) {
 	for i := 0; i < len(s); {
-		if !c.in[s[i]] {
-			i++
-			continue
+		j := c.nextTrigger(s, i)
+		if j < 0 {
+			return
 		}
-		a, trig := i, false
-		for i < len(s) && c.in[s[i]] {
-			trig = trig || c.trigger[s[i]]
-			i++
+		a, b := j, j+1
+		for a > i && c.in[s[a-1]] {
+			a--
 		}
-		if trig && i-a >= c.min {
-			scanSpan(re, c.max, s, a, i, restart, accept)
+		for b < len(s) && c.in[s[b]] {
+			b++
 		}
+		if b-a >= c.min {
+			scanSpan(re, c.max, s, a, b, restart, accept)
+		}
+		i = b
 	}
 }
 
