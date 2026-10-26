@@ -41,10 +41,10 @@ func main() {
 
 type options struct {
 	corpus, prompt, model, presidio, python, worker, uv string
-	rounds                                               int
-	maxLoad                                              float64
-	wait                                                 time.Duration
-	qualityOnly, details                                 bool
+	rounds                                              int
+	maxLoad                                             float64
+	wait                                                time.Duration
+	qualityOnly, details                                bool
 }
 
 // RootCmd is the command line.

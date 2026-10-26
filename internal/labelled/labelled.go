@@ -113,7 +113,7 @@ func known(k string) bool {
 
 // Counts are the scores of one kind.
 type Counts struct {
-	Gold, Found     int // gold spans, gold spans overlapped by a finding of the kind
+	Gold, Found    int // gold spans, gold spans overlapped by a finding of the kind
 	Pred, TruePred int // findings, findings overlapping a gold span of the kind
 }
 
