@@ -1,6 +1,6 @@
 module github.com/go-llmflow/pii/bench/presidiocmp
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/go-llmflow/pii v0.1.0
