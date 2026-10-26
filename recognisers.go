@@ -3,6 +3,7 @@ package pii
 import (
 	"net/netip"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -20,26 +21,26 @@ var emailRE = regexp.MustCompile(`[` + atext + `]+(?:\.[` + atext + `]+)*@(?:[A-
 
 func findEmail(s string) []Match {
 	var out []Match
-	for _, loc := range emailRE.FindAllStringIndex(s, -1) {
-		a, b := loc[0], loc[1]
+	scan(emailRE, emailClass, s, false, func(a, b int) (int, bool) {
 		at := strings.IndexByte(s[a:b], '@')
 		if at > 64 || b-a > MaxLen {
-			continue
+			return 0, false
 		}
 		// Not the tail of a longer word or of a dotted name.
 		if c := before(s, a); c == '.' || c == '@' {
-			continue
+			return 0, false
 		}
 		if c := after(s, b); isAlnum(c) || c == '-' || c == '@' {
-			continue
+			return 0, false
 		}
 		// git@github.com:org/repo.git is an SSH login and a host, not a
 		// mailbox: a colon glued to a path.
 		if after(s, b) == ':' && b+1 < len(s) && s[b+1] != ' ' && s[b+1] != '\n' {
-			continue
+			return 0, false
 		}
 		out = append(out, Match{Email, a, b})
-	}
+		return b, true
+	})
 	return out
 }
 
@@ -53,26 +54,80 @@ func findEmail(s string) []Match {
 var (
 	frPhoneRE   = regexp.MustCompile(`(?:\+33[ .-]?(?:\(0\)[ .-]?)?|0033[ .-]?|0)[1-9](?:[ .-]?[0-9]{2}){4}`)
 	e164PhoneRE = regexp.MustCompile(`\+[1-9](?:[ .-]?[0-9]){7,14}`)
+
+	phonePatterns = []struct {
+		re, whole *regexp.Regexp // whole: anchored at both ends
+		class     *class
+	}{
+		{frPhoneRE, regexp.MustCompile(`\A(?:` + frPhoneRE.String() + `)\z`), frPhoneCls},
+		{e164PhoneRE, regexp.MustCompile(`\A(?:` + e164PhoneRE.String() + `)\z`), e164Class},
+	}
 )
 
 func findPhone(s string) []Match {
 	var out []Match
-	for _, re := range []*regexp.Regexp{frPhoneRE, e164PhoneRE} {
-		for _, loc := range re.FindAllStringIndex(s, -1) {
-			a, b := loc[0], loc[1]
-			if c := before(s, a); isAlnum(c) || c == '+' || c == '.' || c == '-' {
-				continue
-			}
-			if c := after(s, b); isDigit(c) || (c == '.' || c == '-') && isDigit(after(s, b+1)) {
-				continue
-			}
-			if digits(s[a:b]) > 15 {
-				continue
-			}
-			out = append(out, Match{Phone, a, b})
-		}
+	for _, c := range phoneCandidates(s) {
+		out = append(out, c.Match)
 	}
 	return out
+}
+
+// phoneCandidates runs the French pattern, then E.164. A number shortened
+// to end before a separator is a weak candidate (Find lets any overlapping
+// candidate win over it).
+func phoneCandidates(s string) []candidate {
+	var out []candidate
+	var fr []Match // the French pattern's matches, in order, disjoint
+	for pi, p := range phonePatterns {
+		scan(p.re, p.class, s, true, func(a, b int) (int, bool) {
+			if c := before(s, a); isAlnum(c) || c == '+' || c == '.' || c == '-' {
+				return 0, false
+			}
+			// The regexp is greedy: "+10000010 0100000000" gives
+			// "+10000010 010000", refused below because a digit follows.
+			// The shorter "+10000010" is a number too, and masking the
+			// rest would leave it in clear (found by FuzzFind). So the
+			// longest prefix that ends before a separator, matches the
+			// whole pattern and passes the checks is taken.
+			for end := b; end > a; end-- {
+				if end != b && s[end] != ' ' && s[end] != '.' && s[end] != '-' {
+					continue
+				}
+				if end != b && !p.whole.MatchString(s[a:end]) {
+					continue
+				}
+				if c := after(s, end); isDigit(c) || (c == '.' || c == '-') && isDigit(after(s, end+1)) {
+					continue
+				}
+				if digits(s[a:end]) > 15 {
+					continue
+				}
+				// An end that cuts a French number found by the first
+				// pattern would hide its tail: overlapping matches are
+				// resolved by start, so "+10000010 06 12 34" would win
+				// over "06 12 34 56 78" and leave "56 78" in clear.
+				if end != b && cuts(fr, end) {
+					continue
+				}
+				m := Match{Phone, a, end}
+				out = append(out, candidate{Match: m, weak: end != b})
+				if pi == 0 {
+					fr = append(fr, m)
+				}
+				return end, true
+			}
+			return 0, false
+		})
+	}
+	return out
+}
+
+// cuts reports whether position end falls strictly inside one of ms, which
+// are ordered and disjoint (binary search: a text full of numbers must not
+// make this quadratic).
+func cuts(ms []Match, end int) bool {
+	i := sort.Search(len(ms), func(i int) bool { return ms[i].Start >= end })
+	return i > 0 && end < ms[i-1].End
 }
 
 func digits(s string) int {
@@ -111,29 +166,30 @@ var ibanLen = map[string]int{
 
 func findIBAN(s string) []Match {
 	var out []Match
-	for _, loc := range ibanRE.FindAllStringIndex(s, -1) {
-		a := loc[0]
+	var compact [34]byte
+	scan(ibanRE, ibanClass, s, true, func(a, end int) (int, bool) {
 		if isAlnum(before(s, a)) {
-			continue
+			return 0, false
 		}
 		n, ok := ibanLen[s[a:a+2]]
 		if !ok {
-			continue
+			return 0, false
 		}
 		// Take exactly n characters, skipping single spaces.
-		var compact []byte
-		b := a
-		for b < loc[1] && len(compact) < n {
+		k, b := 0, a
+		for b < end && k < n {
 			if s[b] != ' ' {
-				compact = append(compact, s[b])
+				compact[k] = s[b]
+				k++
 			}
 			b++
 		}
-		if len(compact) != n || isAlnum(after(s, b)) || !ValidIBAN(string(compact)) {
-			continue
+		if k != n || isAlnum(after(s, b)) || !ValidIBAN(string(compact[:k])) {
+			return 0, false
 		}
 		out = append(out, Match{IBAN, a, b})
-	}
+		return b, true
+	})
 	return out
 }
 
@@ -171,15 +227,16 @@ var nirRE = regexp.MustCompile(`[1-478](?: ?[0-9]){4} ?(?:[0-9]{2}|2[ABab])(?: ?
 
 func findNIR(s string) []Match {
 	var out []Match
-	for _, loc := range nirRE.FindAllStringIndex(s, -1) {
-		a, b := loc[0], loc[1]
+	scan(nirRE, nirClass, s, true, func(a, b int) (int, bool) {
 		if isAlnum(before(s, a)) || isAlnum(after(s, b)) {
-			continue
+			return 0, false
 		}
-		if ValidNIR(strings.ReplaceAll(s[a:b], " ", "")) {
-			out = append(out, Match{NIR, a, b})
+		if !ValidNIR(strings.ReplaceAll(s[a:b], " ", "")) {
+			return 0, false
 		}
-	}
+		out = append(out, Match{NIR, a, b})
+		return b, true
+	})
 	return out
 }
 
@@ -232,42 +289,76 @@ func ValidNIR(s string) bool {
 // 644-649, 65 (16-19), JCB 3528-3589 (16-19), Diners 30, 36, 38, 39 (14-19).
 // Digits may be grouped by single spaces or dashes.
 
-var cardRE = regexp.MustCompile(`[0-9](?:[ -]?[0-9]){12,}`)
+// Bounded at 19 digits: with the restart after a refused candidate, an
+// unbounded pattern would read the rest of a long run of digits again for
+// each start.
+var cardRE = regexp.MustCompile(`[0-9](?:[ -]?[0-9]){12,18}`)
+
+// maxCardText is the longest card text: 19 digits, 18 separators.
+const maxCardText = 19 + 18
 
 func findCard(s string) []Match {
 	var out []Match
-	for _, loc := range cardRE.FindAllStringIndex(s, -1) {
-		a, b := loc[0], loc[1]
+	scan(cardRE, cardClass, s, true, func(a, b int) (int, bool) {
 		if isAlnum(before(s, a)) {
-			continue
+			return 0, false
 		}
 		// The whole run, or a prefix of it ending before a separator (a card
-		// followed by more grouped digits: "4111 1111 1111 1111 2028").
-		var found bool
-		for end := b; end > a && !found; end-- {
+		// followed by more grouped digits: "4111 1111 1111 1111 2028"). A
+		// card is at most 19 digits and 18 separators: ends beyond that
+		// cannot validate, and trying them all made a long run of digits
+		// quadratic.
+		// The digits once, with the number of digits before each byte, so
+		// that each end costs one check instead of re-reading the text.
+		var d [19]byte
+		var seen [maxCardText + 1]int8
+		n := 0
+		top := min(b, a+maxCardText)
+		for i := a; i < top; i++ {
+			seen[i-a] = int8(n)
+			if isDigit(s[i]) {
+				if n == len(d) {
+					top = i
+					break
+				}
+				d[n] = s[i]
+				n++
+			}
+		}
+		seen[top-a] = int8(n)
+		if n < 13 || !knownNetworkPrefix(d[:n]) {
+			return 0, false
+		}
+		for end := top; end > a; end-- {
 			if end != b && s[end] != ' ' && s[end] != '-' {
 				continue
 			}
 			if end == b && isAlnum(after(s, b)) {
 				continue
 			}
-			if validCardText(s[a:end]) {
+			if k := int(seen[end-a]); k >= 13 && ValidCard(string(d[:k])) {
 				out = append(out, Match{Card, a, end})
-				found = true
+				return end, true
 			}
 		}
-	}
+		return 0, false
+	})
 	return out
 }
 
 func validCardText(t string) bool {
-	d := make([]byte, 0, 19)
+	var d [19]byte
+	n := 0
 	for i := 0; i < len(t); i++ {
 		if isDigit(t[i]) {
-			d = append(d, t[i])
+			if n == len(d) {
+				return false
+			}
+			d[n] = t[i]
+			n++
 		}
 	}
-	return ValidCard(string(d))
+	return ValidCard(string(d[:n]))
 }
 
 // ValidCard reports whether s (digits only) has a known network's prefix and
@@ -287,6 +378,10 @@ func prefix(s string, k int) int {
 	}
 	return v
 }
+
+// knownNetworkPrefix: the first digit of every network's prefix (2 to 6);
+// a cheap refusal before any length is tried.
+func knownNetworkPrefix(d []byte) bool { return len(d) > 0 && d[0] >= '2' && d[0] <= '6' }
 
 func knownNetwork(s string) bool {
 	n := len(s)
@@ -346,39 +441,43 @@ var (
 
 func findIPv4(s string) []Match {
 	var out []Match
-	for _, loc := range ipv4RE.FindAllStringIndex(s, -1) {
-		a, b := loc[0], loc[1]
+	scan(ipv4RE, ipv4Class, s, true, func(a, b int) (int, bool) {
 		if c := before(s, a); isAlnum(c) || c == '.' {
-			continue
+			return 0, false
 		}
 		// Not a version number or an OID: 1.2.3.4.5.
 		if c := after(s, b); isAlnum(c) || c == '.' && isDigit(after(s, b+1)) {
-			continue
+			return 0, false
 		}
-		if ip, err := netip.ParseAddr(s[a:b]); err == nil && ip.Is4() {
-			out = append(out, Match{IPv4, a, b})
+		if ip, err := netip.ParseAddr(s[a:b]); err != nil || !ip.Is4() {
+			return 0, false
 		}
-	}
+		out = append(out, Match{IPv4, a, b})
+		return b, true
+	})
 	return out
 }
 
 func findIPv6(s string) []Match {
 	var out []Match
-	for _, loc := range ipv6RE.FindAllStringIndex(s, -1) {
-		a, b := loc[0], loc[1]
+	// No restart: the pattern is unbounded ([0-9A-Fa-f:]*), so resuming
+	// inside a refused candidate would read a long run again for each start.
+	scan(ipv6RE, ipv6Class, s, false, func(a, b int) (int, bool) {
 		cand := s[a:b]
 		if strings.Count(cand, ":") < 2 || !strings.ContainsAny(cand, "0123456789abcdefABCDEF") {
-			continue
+			return 0, false
 		}
 		if c := before(s, a); isAlnum(c) || c == ':' || c == '.' {
-			continue
+			return 0, false
 		}
 		if c := after(s, b); isAlnum(c) || c == ':' || c == '.' && isDigit(after(s, b+1)) {
-			continue
+			return 0, false
 		}
-		if ip, err := netip.ParseAddr(cand); err == nil && ip.Is6() && ip.Zone() == "" {
-			out = append(out, Match{IPv6, a, b})
+		if ip, err := netip.ParseAddr(cand); err != nil || !ip.Is6() || ip.Zone() != "" {
+			return 0, false
 		}
-	}
+		out = append(out, Match{IPv6, a, b})
+		return b, true
+	})
 	return out
 }

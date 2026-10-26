@@ -1,0 +1,78 @@
+# Labelled corpus for precision and recall (cmd/presidiocmp, TestLabelledCorpus).
+# A document starts with a line "=== <name>". Personal data is written
+# [[kind:value]] with kind one of email, phone, iban, nir, card, ipv4, ipv6;
+# the brackets are removed and the value's position becomes a gold span.
+# Everything else is not personal data, including the decoys (versions,
+# ISBN, SIRET, MAC addresses, a card that fails Luhn, invalid addresses).
+# Values are fictitious; checksums are valid where the kind has one.
+
+=== fr-facturation
+Pour la facturation interne, merci d'envoyer les justificatifs à la comptable, [[email:marie.dupont@etablissement-a.example.fr]], avant la fin du mois. Le virement se fera sur le compte IBAN [[iban:FR76 3000 6000 0112 3456 7890 189]], en précisant la référence du projet. Pour les questions techniques, le support répond au [[phone:01 23 45 67 89]] aux heures ouvrées.
+
+=== fr-rh
+Dossier de M. Martin : numéro de sécurité sociale [[nir:1 84 05 76 451 089 31]], joignable au [[phone:06 12 34 56 78]] ou à [[email:j.martin@example.org]]. Mutuelle : contrat 2024-17 (référence interne, pas un numéro de téléphone).
+
+=== fr-rh-2
+Le salarié né en 1993 a fourni son NIR [[nir:293017512345652]] et un RIB : [[iban:FR14 2004 1010 0505 0001 3M02 606]]. Contact d'urgence : [[phone:+33 6 98 76 54 32]].
+
+=== fr-paiement
+Le client a payé avec la carte [[card:4111 1111 1111 1111]], expirant le 12/28. Une seconde tentative avec 4111 1111 1111 1112 a été refusée (numéro invalide). Montant : 1 234,56 €, commande n° 2026-000481.
+
+=== fr-reseau
+Le serveur de calcul répond sur [[ipv4:192.168.10.42]] et sur [[ipv6:2001:db8:85a3::8a2e:370:7334]]. La passerelle est en [[ipv4:10.0.0.1]]. La version installée est 1.2.3.4.5 et l'OID 1.3.6.1.4.1 identifie le fournisseur ; l'adresse MAC de la carte est 00:1A:2B:3C:4D:5E.
+
+=== fr-git
+Pour cloner : git clone git@github.com:go-llmflow/gateway.git puis lancer make. Le tag v0.8.0 date du 2026-10-26 à 00:42:26. Le hash du commit est b23064a4.
+
+=== fr-entreprise
+La société, SIRET 732 829 320 00074, a commandé le livre ISBN 978-2-07-036822-8. Son standard : [[phone:+33 (0)1 42 68 53 00]] ; son comptable : [[email:compta@societe.example.com]].
+
+=== fr-international
+Nos partenaires : Berlin [[phone:+49 30 901820]], Londres [[phone:+44 20 7946 0958]], Washington [[phone:+1 202 555 0143]]. Le compte allemand est [[iban:DE89 3704 0044 0532 0130 00]], le britannique [[iban:GB29 NWBK 6016 1331 9268 19]].
+
+=== fr-securite
+Le rapport mentionne les adresses [[ipv4:203.0.113.7]] et [[ipv4:198.51.100.23]], ainsi que 999.10.10.10 qui est invalide. Le correctif CVE-2026-12345 s'applique à la version 10.4.1.
+
+=== fr-medical
+Patiente : Mme Durand, NIR [[nir:268123305678993]], tél. [[phone:0033 1 45 67 89 01]]. Rendez-vous le 03/11/2026 à 14h30, salle 12.
+
+=== fr-chat
+salut ! tu peux m'écrire sur [[email:camille_r+llm@mail.example.net]] ou m'appeler au [[phone:07.11.22.33.44]] ce soir. mon ancien numéro 06 12 34 n'existe plus.
+
+=== fr-prompt
+Je prépare la note de cadrage du projet. Le cluster comporte quatre serveurs HGX B300, soit trente-deux GPU, répartis à 81,25 % et 18,75 %. Le budget est de 120 000 € HT sur 36 mois, et la QOS d'emprunt est préemptible au bout de 36 minutes.
+
+=== en-billing
+Please send the invoice to [[email:accounts.payable@example.com]] and wire the amount to [[iban:NL91 ABNA 0417 1643 00]]. For urgent matters call [[phone:+1 415 555 0132]].
+
+=== en-support
+Ticket 48213: the user [[email:alice@example.org]] reports that the VPN at [[ipv4:172.16.254.1]] drops every 30 minutes. Their workstation uses [[ipv6:fe80::1ff:fe23:4567:890a]]. Build 4.11.2 is installed.
+
+=== en-payment
+Card on file: [[card:5555 5555 5555 4444]]. Backup card: [[card:3782 822463 10005]]. The order number 4012-8888-8888 is not a card.
+
+=== en-payment-2
+Charge [[card:6011111111111117]] for $49.99 and refund the old card [[card:4012 8888 8888 1881]]. Reference: INV-2026-10-0042.
+
+=== en-hr
+Employee record: phone [[phone:+44 7700 900123]], email [[email:bob.smith@corp.example.co.uk]], Swiss account [[iban:CH93 0076 2011 6238 5295 7]].
+
+=== en-logs
+2026-10-26T09:58:22Z INFO request from [[ipv4:192.0.2.146]] user=svc-batch latency=12ms
+2026-10-26T09:58:23Z WARN upstream [[ipv6:2001:db8::1]]:8000 slow (412ms)
+2026-10-26T09:58:24Z INFO health ok version=0.32.0 pid=48213
+
+=== en-code
+Use std::vector<int> v; v.push_back(1); in C++ and HashMap::new() in Rust. The SHA-256 is 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 and the UUID 123e4567-e89b-12d3-a456-426614174000.
+
+=== en-prose
+The committee met on 12 March 2026 and approved a budget of 1,250,000 dollars over 3 years. The vote was 7 to 2, and the next meeting is in room 4.12 at 10:30.
+
+=== en-mixed
+Contact [[email:team@lab.example.edu]] or [[phone:+33 1 44 27 44 27]] (Paris office). Spanish IBAN: [[iban:ES91 2100 0418 4502 0005 1332]]. Belgian IBAN: [[iban:BE68 5390 0754 7034]]. JCB card [[card:3530 1113 3330 0000]].
+
+=== en-us-national
+Call the New York office at [[phone:(212) 555-1234]] or the Berlin desk on [[phone:030 901820]] (no country code). Order reference 0123456789 is not a phone number.
+
+=== en-italian
+The Milan branch: [[iban:IT60 X054 2811 1010 0000 0123 456]], phone [[phone:+39 02 1234 5678]].

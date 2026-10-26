@@ -32,6 +32,12 @@ jobs:
       - run: go vet ./...
       - run: go test -race -count=1 -v -run 'FalsePositives' .
       - run: go test -race -count=1 ./...
+      - name: comparison harness (its own module)
+        working-directory: bench/presidiocmp
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test -race -count=1 ./...
 
   # The checksums use int arithmetic: run the tests on 32-bit targets too.
   test32:
@@ -53,6 +59,7 @@ jobs:
       matrix:
         include:
           - { target: FuzzFind, pkg: . }
+          - { target: FuzzRunsMatchWholeText, pkg: . }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

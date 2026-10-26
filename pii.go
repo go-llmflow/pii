@@ -79,17 +79,23 @@ func New(kinds ...Kind) *Scanner {
 
 // Find returns the matches in text, ordered by position and without overlap.
 // Where two candidates overlap, the one that starts first wins, then the
-// longer one, then the one earlier in Kinds.
+// longer one, then the one earlier in Kinds; except that a weak candidate
+// (a shortened phone number, see findPhone) gives way to any other that
+// overlaps it, so that shortening one value never leaves part of another in
+// clear.
 func (s *Scanner) Find(text string) []Match {
-	var all []Match
+	var all []candidate
 	for _, k := range Kinds {
-		if s.kinds[k] {
-			all = append(all, finders[k](text)...)
+		if !s.kinds[k] {
+			continue
 		}
-	}
-	rank := map[Kind]int{}
-	for i, k := range Kinds {
-		rank[k] = i
+		if wf, ok := candidateFinders[k]; ok {
+			all = append(all, wf(text)...)
+			continue
+		}
+		for _, m := range finders[k](text) {
+			all = append(all, candidate{Match: m})
+		}
 	}
 	sort.Slice(all, func(i, j int) bool {
 		a, b := all[i], all[j]
@@ -101,16 +107,28 @@ func (s *Scanner) Find(text string) []Match {
 		}
 		return rank[a.Kind] < rank[b.Kind]
 	})
-	out := all[:0]
+	var out []Match
+	var lastWeak bool
 	end := 0
-	for _, m := range all {
-		if m.Start < end {
+	for _, c := range all {
+		if c.Start < end {
+			if lastWeak && !c.weak {
+				out[len(out)-1] = c.Match
+				lastWeak, end = false, c.End
+			}
 			continue
 		}
-		out = append(out, m)
-		end = m.End
+		out = append(out, c.Match)
+		lastWeak, end = c.weak, c.End
 	}
 	return out
+}
+
+// candidate is a match before overlaps are resolved; weak when it was
+// shortened to stop before another value.
+type candidate struct {
+	Match
+	weak bool
 }
 
 // Mask returns text with each match replaced by repl(m). The matches must
@@ -130,6 +148,21 @@ func Mask(text string, matches []Match, repl func(Match) string) string {
 // Placeholder is the default replacement: the kind in capitals between
 // brackets, "[IBAN]".
 func Placeholder(m Match) string { return "[" + strings.ToUpper(string(m.Kind)) + "]" }
+
+// rank orders kinds as in Kinds (built once: Find used to build it on every
+// call).
+var rank = func() map[Kind]int {
+	r := map[Kind]int{}
+	for i, k := range Kinds {
+		r[k] = i
+	}
+	return r
+}()
+
+// candidateFinders are the recognisers that can return weak candidates.
+var candidateFinders = map[Kind]func(string) []candidate{
+	Phone: phoneCandidates,
+}
 
 var finders = map[Kind]func(string) []Match{
 	Email: findEmail,

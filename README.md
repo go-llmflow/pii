@@ -31,7 +31,9 @@ A recogniser that has a check digit uses it. A match is therefore a value that c
 | `ipv4` | dotted decimal, not inside a longer dotted run (version numbers, OIDs) | `net/netip` (which rejects octets with leading zeros) |
 | `ipv6` | the three text forms of RFC 4291 §2.2, including a trailing IPv4 | `net/netip`; zones are not accepted |
 
-When two candidates overlap, the one that starts first wins, then the longer one, then the checksum-validated kind.
+When two candidates overlap, the one that starts first wins, then the longer one, then the checksum-validated kind. There is one exception. A phone number that was shortened to end before a separator (`+10000010` in `+10000010 0100000000`) gives way to any candidate that overlaps it. That way, shortening one value never leaves part of another in clear.
+
+A candidate that is refused (preceded by a letter or digit, followed by a digit, failing its checksum) does not hide one that overlaps it: the search resumes just after its start. Since v0.2.0; v0.1.0 resumed after its end, and `FuzzFind` found numbers left in clear after masking.
 
 `MaxLen` (254 bytes) bounds the length of any match. A caller masking a stream can hold back the last `MaxLen` bytes, and will then never release the start of a match whose end it has not seen yet.
 
@@ -63,11 +65,64 @@ The input is untrusted (prompts and model output). Every regular expression runs
 - every checksum-validated match re-validates on its own;
 - masking twice gives the same result as masking once.
 
+RE2 is not enough on its own. **v0.1.0 was quadratic on long runs of digits**, and should be upgraded:
+
+- the card recogniser tried every end of an unbounded candidate;
+- 1 MiB of `1 1 1 …` took 11 min 56 s (measured 2026-10-26, on a loaded machine).
+
+Since v0.2.0 card candidates are bounded at 19 digits. Patterns of bounded length are searched in 512-byte windows, and positions that cannot start a match are skipped. `TestLongRunsStayLinear` checks the growth from 128 KiB to 2 MiB on twelve adversarial inputs: linear is ×16, and the test fails above ×64.
+
 The tests also run with `GOARCH=386`.
 
-## Performance
+## How it finds, and why it is fast
 
-`BenchmarkFind` scans 64 KiB of the benign corpus. The comparison against Microsoft Presidio, the reference in this domain, has not been made yet: the machine was too loaded to measure (load average 81).
+Each pattern can only match bytes of a small ASCII class, and contains no assertion. So each match lies inside one maximal run of that class, and contains a trigger byte:
+
+| kind | trigger |
+|---|---|
+| e-mail | `@` |
+| IPv6 | `:` |
+| E.164 phone | `+` |
+| IPv4 | `.` |
+| the other numbers | a digit |
+
+`Find` looks for the trigger bytes (`strings.IndexByte`, vectorised in the standard library). It expands each run that holds one, and runs the regexp only on runs at least as long as the shortest match. On prose, that is a handful of short strings instead of nine passes of an automaton over the whole text.
+
+This changes nothing in the results, and two tests check it:
+
+- `TestRunsMatchWholeText` (20,000 generated texts) and `FuzzRunsMatchWholeText` compare with a scan of the whole text;
+- `TestMasksAtLeastV010` checks a recorded corpus of what v0.1.0 found: every byte v0.1.0 masked is still masked.
+
+v0.1.0, profiled on the gateway's 2 KB benchmark prompt (`BenchmarkFindPrompt`):
+
+- two thirds of the time went to `regexp` over the whole text, nine times (e-mail and IPv6 a third between them);
+- a third went to `runtime.madvise`, for the backtracker's bitmaps sized to the whole text.
+
+## Compared with Microsoft Presidio
+
+`bench/presidiocmp` compares pii with [Presidio](https://github.com/microsoft/presidio), the reference tool in this domain. Presidio is `presidio-analyzer` 2.2.364 with its default spaCy model, `en_core_web_lg`, run through `uv`. The harness is in Go; Python only runs Presidio. It is a separate module, so pii itself keeps no dependency.
+
+**Detection quality, 2026-10-26** (`presidiocmp --quality-only --details`; quality does not depend on the machine's load).
+
+The corpus is `testdata/labelled.txt`: 24 documents in French and English, with decoys (versions, OIDs, ISBN, SIRET, MAC addresses, a card that fails Luhn, invalid addresses, a git remote). A finding counts when it overlaps a labelled value of its kind:
+
+| kind | pii precision / recall | Presidio precision / recall |
+|---|---|---|
+| card | 1.00 / 1.00 | 1.00 / 1.00 |
+| email | 1.00 / 1.00 | 0.89 / 1.00 (`git@github.com` from a git remote) |
+| iban | 1.00 / 1.00 | 1.00 / 1.00 |
+| ip (v4 and v6) | 1.00 / 1.00 | 0.82 / 1.00 (a version number, an OID) |
+| phone | 0.93 / 0.87 | 0.74 / 0.93 (dates, order numbers, an IP address, the tail of an IBAN) |
+| nir | 1.00 / 1.00 | n/a: Presidio has no French recogniser |
+
+Read this with three caveats:
+- I wrote the corpus knowing pii's rules, which favours it.
+- pii misses phone numbers in national formats other than the French one (`(212) 555-1234`, `030 901820`), which Presidio finds.
+- Presidio misses `+44 7700 900123`.
+
+Both take the reference `0123456789` for a phone number.
+
+**Latency** is measured single-threaded, in interleaved rounds, and only at load ≤ 4 (the harness refuses otherwise). The figures are not in yet: the machine has been above load 80 all morning.
 
 ## References
 
