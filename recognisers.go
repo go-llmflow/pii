@@ -544,7 +544,9 @@ func findIPv6(s string) []Match {
 				break
 			}
 			for _, e := range [...]int{b, b - 1} {
-				if e <= v || e < b && s[e] != ':' {
+				// Only one colon is trimmed, and not from a "::" (":::" is no
+				// address followed by a colon).
+				if e <= v || e < b && (s[e] != ':' || s[e-1] == ':') {
 					continue
 				}
 				cand := s[v:e]
