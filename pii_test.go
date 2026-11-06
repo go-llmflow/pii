@@ -43,6 +43,7 @@ func ibanFor(cc, bban string) string {
 func TestValidators(t *testing.T) {
 	for _, s := range []string{
 		"GB82WEST12345698765432", // ISO 13616 example
+		"gb82west12345698765432", // typed in lower case: read as capitals
 		"FR1420041010050500013M02606",
 		"DE89370400440532013000",
 		ibanFor("FR", "30006000011234567890189"),
@@ -52,7 +53,7 @@ func TestValidators(t *testing.T) {
 			t.Errorf("ValidIBAN(%s) = false", s)
 		}
 	}
-	for _, s := range []string{"GB82WEST12345698765433", "FR1420041010050500013M0260", "XX82WEST12345698765432", "GB82west12345698765432"} {
+	for _, s := range []string{"GB82WEST12345698765433", "FR1420041010050500013M0260", "XX82WEST12345698765432"} {
 		if ValidIBAN(s) {
 			t.Errorf("ValidIBAN(%s) = true", s)
 		}

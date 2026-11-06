@@ -265,7 +265,6 @@ var (
 	emailClass = newClass(anyOf(isAlnum, oneOf("!#$%&'*+=?^_~-.@")), oneOf("@"), len("a@b.cc"), emailRE)
 	frPhoneCls = newClass(anyOf(isDigit, oneOf("+ .-()")), isDigit, 10, frPhoneRE)
 	e164Class  = newClass(anyOf(isDigit, oneOf("+ .-")), oneOf("+"), 9, e164PhoneRE)
-	ibanClass  = newClass(anyOf(isUpper, isDigit, oneOf(" ")), isDigit, 15, ibanRE)
 	nirClass   = newClass(anyOf(isDigit, oneOf(" ABab")), isDigit, 15, nirRE)
 	cardClass  = newClass(anyOf(isDigit, oneOf(" -")), isDigit, 13, cardRE)
 	ipv4Class  = newClass(anyOf(isDigit, oneOf(".")), oneOf("."), 7, ipv4RE)
