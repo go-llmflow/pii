@@ -17,6 +17,10 @@ import (
 
 const atext = `A-Za-z0-9!#$%&'*+=?^_~-`
 
+// atextChars is atext's punctuation, as bytes (the letters and digits are
+// tested with isAlnum).
+const atextChars = `!#$%&'*+=?^_~-`
+
 var emailRE = regexp.MustCompile(`[` + atext + `]+(?:\.[` + atext + `]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}`)
 
 func findEmail(s string) []Match {
@@ -26,9 +30,29 @@ func findEmail(s string) []Match {
 		if at > 64 || b-a > MaxLen {
 			return 0, false
 		}
-		// Not the tail of a longer word or of a dotted name.
-		if c := before(s, a); c == '.' || c == '@' {
+		if before(s, a) == '@' {
 			return 0, false
+		}
+		// A dot before the match is not part of the address ("...john@x.org",
+		// an ellipsis) or begins a malformed dotted name ("a..b@x.org"): the
+		// whole run of atext and dots is masked, bar the leading dots, so
+		// that no part of the local part stays in clear.
+		if before(s, a) == '.' {
+			lo := 0
+			if len(out) > 0 {
+				lo = out[len(out)-1].End
+			}
+			start := a
+			for start > lo && (s[start-1] == '.' || strings.IndexByte(atextChars, s[start-1]) >= 0 || isAlnum(s[start-1])) {
+				start--
+			}
+			for start < a && s[start] == '.' {
+				start++
+			}
+			if at := strings.IndexByte(s[start:b], '@'); at > 64 || b-start > MaxLen {
+				return 0, false
+			}
+			a = start
 		}
 		if c := after(s, b); isAlnum(c) || c == '-' || c == '@' {
 			return 0, false
@@ -148,7 +172,9 @@ func digits(s string) int {
 // (A=10 … Z=35), the number mod 97 is 1. Printed in groups of four separated
 // by spaces, which are accepted.
 
-var ibanRE = regexp.MustCompile(`[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]){11,30}`)
+// Letters of either case are accepted, and read as capitals by the check
+// (ISO 13616 writes an IBAN in capitals, but people and models type
+// "fr76 3000 ...").
 
 // ibanLen is the IBAN length of each country in the SWIFT registry
 // (as listed under "IBAN formats by country").
@@ -164,45 +190,74 @@ var ibanLen = map[string]int{
 	"CH": 21, "TN": 24, "TR": 26, "UA": 29, "AE": 23, "GB": 22, "VA": 22, "VG": 24, "YE": 30,
 }
 
+// findIBAN reads the text by hand, not with a regexp: letters of either case
+// are accepted (a lower-case "fr76 3000 ..." is read as capitals), which made
+// the byte class of a run-based regexp scan cover every word of a prose text.
+// The shape is the one of the pattern
+// `[A-Za-z]{2}[0-9]{2}(?: ?[A-Za-z0-9]){11,30}` (ibanReference in the tests is
+// that pattern, and the two are compared), and a refused candidate resumes just
+// after its start, as every other recogniser does.
 func findIBAN(s string) []Match {
 	var out []Match
 	var compact [34]byte
-	scan(ibanRE, ibanClass, s, true, func(a, end int) (int, bool) {
-		if isAlnum(before(s, a)) {
-			return 0, false
+	for i := 0; i+4 <= len(s); {
+		if !isDigit(s[i+2]) || !isDigit(s[i+3]) || !isAlpha(s[i]) || !isAlpha(s[i+1]) || isAlnum(before(s, i)) {
+			i++
+			continue
 		}
-		n, ok := ibanLen[s[a:a+2]]
+		cc := [2]byte{upper(s[i]), upper(s[i+1])}
+		n, ok := ibanLen[string(cc[:])]
 		if !ok {
-			return 0, false
+			i++
+			continue
 		}
 		// Take exactly n characters, skipping single spaces.
-		k, b := 0, a
-		for b < end && k < n {
-			if s[b] != ' ' {
-				compact[k] = s[b]
+		copy(compact[:4], s[i:i+4])
+		k, b := 4, i+4
+		for k < n && b < len(s) {
+			c := s[b]
+			if isAlnum(c) {
+				compact[k] = c
 				k++
+				b++
+			} else if c == ' ' && isAlnum(after(s, b+1)) {
+				b++
+			} else {
+				break
 			}
-			b++
 		}
 		if k != n || isAlnum(after(s, b)) || !ValidIBAN(string(compact[:k])) {
-			return 0, false
+			i++
+			continue
 		}
-		out = append(out, Match{IBAN, a, b})
-		return b, true
-	})
+		out = append(out, Match{IBAN, i, b})
+		i = b
+	}
 	return out
+}
+
+// upper is the ASCII capital of c.
+func upper(c byte) byte {
+	if c >= 'a' && c <= 'z' {
+		return c - 'a' + 'A'
+	}
+	return c
 }
 
 // ValidIBAN reports whether s, without spaces, is an IBAN of its country's
 // length whose ISO 13616 check (mod 97 = 1) holds.
 func ValidIBAN(s string) bool {
-	if len(s) < 5 || len(s) > 34 || ibanLen[s[:2]] != len(s) {
+	if len(s) < 5 || len(s) > 34 {
+		return false
+	}
+	cc := [2]byte{upper(s[0]), upper(s[1])}
+	if ibanLen[string(cc[:])] != len(s) {
 		return false
 	}
 	r := s[4:] + s[:4]
 	m := 0
 	for i := 0; i < len(r); i++ {
-		c := r[i]
+		c := upper(r[i])
 		switch {
 		case isDigit(c):
 			m = (m*10 + int(c-'0')) % 97
@@ -463,21 +518,63 @@ func findIPv6(s string) []Match {
 	// No restart: the pattern is unbounded ([0-9A-Fa-f:]*), so resuming
 	// inside a refused candidate would read a long run again for each start.
 	scan(ipv6RE, ipv6Class, s, false, func(a, b int) (int, bool) {
-		cand := s[a:b]
-		if strings.Count(cand, ":") < 2 || !strings.ContainsAny(cand, "0123456789abcdefABCDEF") {
-			return 0, false
+		// The whole candidate first. Then what a neighbouring character hides:
+		// a label glued to the address ("IPv6:2001:db8::1", "host:fe80::1"),
+		// so that the candidate starts inside the label, and a colon closing
+		// the address ("2001:db8::1: unreachable"). The starts tried are just
+		// after the first colons only, and only a short candidate is split:
+		// the pattern is unbounded, and a long run must not be tried at every
+		// start.
+		starts := [...]int{a, -1, -1, -1, -1}
+		//
+		// Only a letter before the candidate is a label: after a digit or a
+		// dot, the text is a longer number whose other parts (a card, a
+		// phone number) must not be cut by a start inside it.
+		if b-a <= 2*maxIPv6Text && isAlpha(before(s, a)) {
+			k := 1
+			for i := a; i < b-1 && k < len(starts); i++ {
+				if s[i] == ':' && s[i+1] != ':' {
+					starts[k] = i + 1
+					k++
+				}
+			}
 		}
-		if c := before(s, a); isAlnum(c) || c == ':' || c == '.' {
-			return 0, false
+		for _, v := range starts {
+			if v < 0 {
+				break
+			}
+			for _, e := range [...]int{b, b - 1} {
+				// Only one colon is trimmed, and not from a "::" (":::" is no
+				// address followed by a colon).
+				if e <= v || e < b && (s[e] != ':' || s[e-1] == ':') {
+					continue
+				}
+				cand := s[v:e]
+				if strings.Count(cand, ":") < 2 || !strings.ContainsAny(cand, "0123456789abcdefABCDEF") {
+					continue
+				}
+				if v == a {
+					if c := before(s, a); isAlnum(c) || c == ':' || c == '.' {
+						continue
+					}
+				}
+				// A colon that was trimmed closes the address, as it does a
+				// sentence; it is no part of a longer address.
+				if c := after(s, e); isAlnum(c) || c == ':' && e == b || c == '.' && isDigit(after(s, e+1)) {
+					continue
+				}
+				if ip, err := netip.ParseAddr(cand); err != nil || !ip.Is6() || ip.Zone() != "" {
+					continue
+				}
+				out = append(out, Match{IPv6, v, e})
+				return e, true
+			}
 		}
-		if c := after(s, b); isAlnum(c) || c == ':' || c == '.' && isDigit(after(s, b+1)) {
-			return 0, false
-		}
-		if ip, err := netip.ParseAddr(cand); err != nil || !ip.Is6() || ip.Zone() != "" {
-			return 0, false
-		}
-		out = append(out, Match{IPv6, a, b})
-		return b, true
+		return 0, false
 	})
 	return out
 }
+
+// maxIPv6Text is the longest text form of an IPv6 address (RFC 4291 §2.2: 39
+// for the full form, 45 with a trailing IPv4).
+const maxIPv6Text = 45

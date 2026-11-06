@@ -35,6 +35,8 @@ When two candidates overlap, the one that starts first wins, then the longer one
 
 A candidate that is refused (preceded by a letter or digit, followed by a digit, failing its checksum) does not hide one that overlaps it: the search resumes just after its start. Since v0.2.0; v0.1.0 resumed after its end, and `FuzzFind` found numbers left in clear after masking.
 
+A neighbouring character no longer hides a value (security audit of v0.2.1, fixed in v0.2.2): an address after dots (`...john.doe@x.org`), an IPv6 address after a glued label (`IPv6:2001:db8::1`, `host:fe80::1`) or before a closing colon (`2001:db8::1:`), and an IBAN typed in lower case (`fr76 3000 ...`, read as capitals) are found. A start inside a longer number (after a digit or a dot) is still not tried, so that a card or phone number overlapping it is never cut.
+
 `MaxLen` (254 bytes) bounds the length of any match. A caller masking a stream can hold back the last `MaxLen` bytes, and will then never release the start of a match whose end it has not seen yet.
 
 ## False positives, measured
